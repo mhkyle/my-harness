@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"mhkyle/my-harness/internal/provider"
 	"mhkyle/my-harness/internal/schema"
@@ -66,27 +67,30 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 
 		log.Printf("[Engine] Model requested to call %d tools...\n", len(responseMsg.ToolCalls))
 
-		for _, toolCall := range responseMsg.ToolCalls {
-			log.Printf("  -> 🛠️ Executing tool: %s, Arguments: %s\n", toolCall.Name, string(toolCall.Arguments))
+		var wg sync.WaitGroup
+		wg.Add(len(responseMsg.ToolCalls))
+		var tempContextHistory = make([]schema.Message, len(responseMsg.ToolCalls))
+		for i, toolCall := range responseMsg.ToolCalls {
+			go func(tc schema.ToolCall, index int) {
+				defer wg.Done()
+				log.Printf("  -> 🛠️ Executing tool: %s, Arguments: %s\n", tc.Name, string(tc.Arguments))
+				result := e.registry.Execute(ctx, tc)
 
-			// Route and execute the underlying tool through the Registry
-			result := e.registry.Execute(ctx, toolCall)
-
-			if result.IsError {
-				log.Printf("  -> ❌ Tool execution error: %s\n", result.Output)
-			} else {
-				log.Printf("  -> ✅ Tool executed successfully (returned %d bytes)\n", len(result.Output))
-			}
-
-			// Encapsulate the tool execution observation as a User Message and append it to the context
-			// Note: ToolCallID must be included! This is crucial for maintaining the reasoning chain of the LLM
-			observationMsg := schema.Message{
-				Role:       schema.RoleUser,
-				Content:    result.Output,
-				ToolCallID: toolCall.ID,
-			}
-			contextHistory = append(contextHistory, observationMsg)
+				if result.IsError {
+					log.Printf("  -> ❌ Tool execution error: %s\n", result.Output)
+				} else {
+					log.Printf("  -> ✅ Tool executed successfully (returned %d bytes)\n", len(result.Output))
+				}
+				observationMsg := schema.Message{
+					Role:       schema.RoleUser,
+					Content:    result.Output,
+					ToolCallID: tc.ID,
+				}
+				tempContextHistory[index] = observationMsg
+			}(toolCall, i)
 		}
+		wg.Wait()
+		contextHistory = append(contextHistory, tempContextHistory...)
 	}
 
 	return nil
