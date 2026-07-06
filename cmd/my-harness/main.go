@@ -6,16 +6,16 @@ import (
 
 	"mhkyle/my-harness/internal/engine"
 	"mhkyle/my-harness/internal/provider"
-	bashtool "mhkyle/my-harness/internal/tools/bash"
+	"mhkyle/my-harness/internal/tools"
 )
 
 func main() {
 	workDir, _ := os.Getwd()
 
 	provider := provider.NewMockProvider()
-	registry := bashtool.NewBashTool()
+	registry := tools.NewMockRegistry()
 
-	eng := engine.NewAgentEngine(provider, registry, workDir)
+	eng := engine.NewAgentEngine(provider, registry, workDir, true)
 	err := eng.Run(context.Background(), "Please help to check the files in current directory.")
 	if err != nil {
 		panic(err)

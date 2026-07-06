@@ -12,17 +12,18 @@ import (
 )
 
 type AgentEngine struct {
-	provider provider.LLMProvider
-	registry tools.Registry
-
-	WorkDir string
+	provider       provider.LLMProvider
+	registry       tools.Registry
+	WorkDir        string
+	EnableThinking bool
 }
 
-func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string) *AgentEngine {
+func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking bool) *AgentEngine {
 	return &AgentEngine{
-		provider: p,
-		registry: r,
-		WorkDir:  workDir,
+		provider:       p,
+		registry:       r,
+		WorkDir:        workDir,
+		EnableThinking: enableThinking,
 	}
 }
 
@@ -46,9 +47,21 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 		turnCount++
 		log.Printf("========== [Turn %d] Start ==========\n", turnCount)
 
-		availableTools := e.registry.GetAvailableTools()
+		// ReAct
+		if e.EnableThinking {
+			log.Println("[Engine] Thinking mode enabled. Start thinking...")
+			thinkResp, err := e.provider.Generate(ctx, contextHistory, nil)
+			if err != nil {
+				return fmt.Errorf("failed to generate thinking response: %v", err)
+			}
 
-		log.Println("[Engine] Start reasoning...")
+			if thinkResp.Content != "" {
+				log.Printf("💭 Model Thinking: %s\n", thinkResp.Content)
+				contextHistory = append(contextHistory, *thinkResp)
+			}
+		}
+
+		availableTools := e.registry.GetAvailableTools()
 		responseMsg, err := e.provider.Generate(ctx, contextHistory, availableTools)
 		if err != nil {
 			return fmt.Errorf("failed to generate response: %v", err)
