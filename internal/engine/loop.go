@@ -33,7 +33,7 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 	contextHistory := []schema.Message{
 		{
 			Role:    schema.RoleSystem,
-			Content: "You are a harness project, an expert coding assistant. You have full access to tools in the workspace.",
+			Content: "You are a AI harness project, an expert coding assistant. You have full access to tools in the workspace.",
 		},
 		{
 			Role:    schema.RoleUser,
@@ -47,7 +47,7 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 		turnCount++
 		log.Printf("========== [Turn %d] Start ==========\n", turnCount)
 
-		// ReAct
+		// Two-Stage ReAct
 		if e.EnableThinking {
 			log.Println("[Engine] Thinking mode enabled. Start thinking...")
 			thinkResp, err := e.provider.Generate(ctx, contextHistory, nil)
