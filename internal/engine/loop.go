@@ -67,6 +67,7 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 			return fmt.Errorf("failed to generate response: %v", err)
 		}
 
+		log.Printf("[Engine] Model Response: %v\n", responseMsg)
 		contextHistory = append(contextHistory, *responseMsg)
 
 		if responseMsg.Content != "" {

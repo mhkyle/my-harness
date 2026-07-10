@@ -7,7 +7,7 @@ import (
 
 	"mhkyle/my-harness/internal/engine"
 	"mhkyle/my-harness/internal/provider"
-	bashTool "mhkyle/my-harness/internal/tools/bash"
+	"mhkyle/my-harness/internal/tools"
 )
 
 func main() {
@@ -24,11 +24,14 @@ func main() {
 		log.Fatalf("failed to initialize Zhipu OpenAI provider")
 	}
 
-	registry := bashTool.NewBashTool()
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewReadFileTool(workDir))
+	registry.Register(tools.NewBashTool())
 
-	query := "Please help to review the codes in current directory, and tell me what it is mainly doing."
+	query := "What is the project mainly doing, how it implements the details, which technical stack is used?"
+	EnableThinking := false
 
-	eng := engine.NewAgentEngine(provider, registry, workDir, true)
+	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking)
 	err = eng.Run(context.Background(), query)
 	if err != nil {
 		panic(err)
