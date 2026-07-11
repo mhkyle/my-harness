@@ -7,8 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"mhkyle/my-harness/internal/schema"
+)
+
+const (
+	defaultBashTimeout   = 30 * time.Second
+	defaultMaxOutputSize = 8000
 )
 
 type BashTool struct {
@@ -53,17 +59,27 @@ func (m *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		}
 		workDir = cwd
 	}
+	timeoutCtx, cancel := context.WithTimeout(ctx, defaultBashTimeout)
+	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bash", "-lc", input.Command)
+	cmd := exec.CommandContext(timeoutCtx, "bash", "-lc", input.Command)
 	cmd.Dir = workDir
 	output, err := cmd.CombinedOutput()
 
-	if err != nil {
-		if len(output) == 0 {
-			return "", fmt.Errorf("command failed: %v", err)
-		}
+	if timeoutCtx.Err() == context.DeadlineExceeded {
+		return fmt.Sprintf("timeout execute the command after %s, current output is %s", defaultBashTimeout, strings.TrimRight(string(output), "\n")), nil
+	}
 
-		return strings.TrimRight(string(output), "\n"), err
+	if err != nil {
+		return fmt.Sprintf("command failed: %v, output: %s", err, strings.TrimRight(string(output), "\n")), nil
+	}
+
+	if len(output) == 0 {
+		return "command executed successfully without any output", nil
+	}
+
+	if len(output) > defaultMaxOutputSize {
+		return fmt.Sprintf("%s\n\nCommand executed successfully, but output is too long (%d bytes). First %d bytes: %s", strings.TrimRight(string(output[:defaultMaxOutputSize]), "\n"), len(output), defaultMaxOutputSize, strings.TrimRight(string(output[:defaultMaxOutputSize]), "\n")), nil
 	}
 
 	return strings.TrimRight(string(output), "\n"), nil

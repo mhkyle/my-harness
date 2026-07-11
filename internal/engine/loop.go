@@ -91,9 +91,9 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 				result := e.registry.Execute(ctx, tc)
 
 				if result.IsError {
-					log.Printf("  -> ❌ Tool execution error: %s\n", result.Output)
+					log.Printf("  -> ❌ Tool %s execution error: %s\n", tc.Name, result.Output)
 				} else {
-					log.Printf("  -> ✅ Tool executed successfully (returned %d bytes)\n", len(result.Output))
+					log.Printf("  -> ✅ Tool %s executed successfully (returned %d bytes)\n", tc.Name, len(result.Output))
 				}
 				observationMsg := schema.Message{
 					Role:       schema.RoleUser,
