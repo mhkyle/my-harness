@@ -46,6 +46,7 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 	for {
 		turnCount++
 		log.Printf("========== [Turn %d] Start ==========\n", turnCount)
+		log.Printf("[Engine] Current context history length: %d\n", len(contextHistory))
 
 		// Two-Stage ReAct
 		if e.EnableThinking {
