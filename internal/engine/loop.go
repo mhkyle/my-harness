@@ -6,6 +6,7 @@ import (
 	"log"
 	"sync"
 
+	contextComposer "mhkyle/my-harness/internal/context"
 	"mhkyle/my-harness/internal/provider"
 	"mhkyle/my-harness/internal/schema"
 	"mhkyle/my-harness/internal/tools"
@@ -16,6 +17,7 @@ type AgentEngine struct {
 	registry       tools.Registry
 	WorkDir        string
 	EnableThinking bool
+	composer       *contextComposer.PromptComposer
 }
 
 func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking bool) *AgentEngine {
@@ -24,6 +26,7 @@ func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, en
 		registry:       r,
 		WorkDir:        workDir,
 		EnableThinking: enableThinking,
+		composer:       contextComposer.NewPromptComposer(workDir),
 	}
 }
 
@@ -31,10 +34,7 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 	log.Printf("[Engine] Start AgentEngine with DIR %s\n", e.WorkDir)
 
 	contextHistory := []schema.Message{
-		{
-			Role:    schema.RoleSystem,
-			Content: "You are a AI harness project, an expert coding assistant. You have full access to tools in the workspace.",
-		},
+		e.composer.Build(),
 		{
 			Role:    schema.RoleUser,
 			Content: userPrompt,
