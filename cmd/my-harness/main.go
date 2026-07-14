@@ -31,10 +31,10 @@ func main() {
 	registry.Register(tools.NewBashTool())
 
 	query := `
-	which sddz clusters are doing the OS patching?
+	Find which sddz clusters are doing the OS patching?
 	`
 
-	EnableThinking := false
+	EnableThinking := true
 
 	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking)
 	err = eng.Run(context.Background(), query)
