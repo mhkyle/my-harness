@@ -4,10 +4,9 @@
 This workspace appears to be a Go project (go.mod present) with cmd/, internal/, pkg/, and a small server.go. The user has not yet provided an explicit objective/request in the chat. Before making changes, we need to understand what the user wants built/fixed and then execute tasks accordingly.
 
 ## Goals
-1. Clarify the user's request (feature/bugfix/refactor/docs/tests).
-2. Inspect relevant code paths based on the request.
-3. Implement changes with best practices (clean code, tests if applicable).
-4. Run Go tooling/tests to validate.
+1. Implement a minimal Gin-based web server entrypoint at cmd/server.
+2. Add internal/route registration with GET /healthcheck returning 200 OK.
+3. Ensure project builds and `go test ./...` passes.
 
 ## Approach (once request is known)
 - Locate entrypoints in cmd/ and server.go.

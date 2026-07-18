@@ -12,6 +12,11 @@ import (
 	"mhkyle/my-harness/internal/tools"
 )
 
+const (
+	maxHistorySize = 100
+	maxContextSize = 36000
+)
+
 type AgentEngine struct {
 	provider       provider.LLMProvider
 	registry       tools.Registry
@@ -19,6 +24,7 @@ type AgentEngine struct {
 	PlanMode       bool
 	composer       *contextComposer.PromptComposer
 	compactor      contextComposer.Compactor
+	recovery       contextComposer.RecoveryManager
 }
 
 func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking, planMode bool) *AgentEngine {
@@ -28,7 +34,8 @@ func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, en
 		EnableThinking: enableThinking,
 		PlanMode:       planMode,
 		composer:       contextComposer.NewPromptComposer(workDir, planMode),
-		compactor:      contextComposer.NewStaticCompactor(20000, 10),
+		compactor:      contextComposer.NewStaticCompactor(maxContextSize, maxHistorySize),
+		recovery:       contextComposer.NewSimpleRecoveryManager(),
 	}
 }
 
@@ -44,7 +51,7 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 		turn++
 		log.Printf("[Engine] Turn %d\n", turn)
 		var contextHistory []schema.Message
-		workingMem := session.GetWorkingMemory(6)
+		workingMem := session.GetWorkingMemory(maxHistorySize)
 		contextHistory = append(contextHistory, systemPrompt)
 		contextHistory = append(contextHistory, workingMem...)
 
@@ -96,10 +103,17 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 				log.Printf("  -> 🛠️ Executing tool: %s, Arguments: %s\n", tc.Name, string(tc.Arguments))
 				result := e.registry.Execute(ctx, tc)
 
+				finalOutput := result.Output
+				if result.IsError {
+					finalOutput = e.recovery.AnalyzeAndInject(toolCall.Name, result.Output)
+					log.Printf("  -> ⚠️ Tool %s returned an error: %s\n", tc.Name, finalOutput)
+				} else {
+					log.Printf("  -> ✅ Tool %s executed successfully. Output: %s\n", tc.Name, finalOutput)
+				}
 				if reporter != nil {
 					displayOutput := result.Output
-					if len(displayOutput) > 200 {
-						displayOutput = displayOutput[:200] + "...(truncated)"
+					if len(displayOutput) > maxContextSize {
+						displayOutput = displayOutput[:maxContextSize] + "...(truncated)"
 					}
 					reporter.OnToolResult(ctx, tc.Name, displayOutput, result.IsError)
 				}
