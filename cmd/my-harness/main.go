@@ -14,19 +14,12 @@ import (
 func main() {
 	workDir, _ := os.Getwd()
 
-	// apiKey, err := os.ReadFile("/Users/minghyuan/.ebay-claude-code.txt")
-	// if err != nil {
-	// 	log.Fatalf("failed to read API key: %v", err)
-	// }
-	// provider := provider.NewZhipuOpenAIProvider("https://hubgptgatewaysvc.vip.qa.ebay.com/gateway/v1/",
-	// 	string(apiKey), "hubgpt-chat-completions-dedicated")
-	// if provider == nil {
-	// 	log.Fatalf("failed to initialize Zhipu OpenAI provider")
-	// }
-
-	// local ollama server
-	provider := provider.NewZhipuOpenAIProvider("http://localhost:11434/v1",
-		"fake", "qwen3.6:latest")
+	apiKey, err := os.ReadFile("/Users/minghyuan/.ebay-claude-code.txt")
+	if err != nil {
+		log.Fatalf("failed to read API key: %v", err)
+	}
+	provider := provider.NewZhipuOpenAIProvider("https://hubgptgatewaysvc.vip.qa.ebay.com/gateway/v1/",
+		string(apiKey), "hubgpt-chat-completions-dedicated")
 	if provider == nil {
 		log.Fatalf("failed to initialize Zhipu OpenAI provider")
 	}
@@ -40,7 +33,7 @@ func main() {
 	reporter := engine.NewTerminalReporter()
 	// nil session
 	userQuery := `
-	What this project is about in current directory? Tell me more details about the project, and give me a list of all the files in the project with their file sizes.
+	How many lines of golang code here in the project without vendor? Please provide a detailed breakdown by file type and the total count.
 	`
 	s := engine.GlobalSessionMgr.GetOrCreate("chat1", workDir)
 	s.Append(schema.Message{
@@ -48,10 +41,9 @@ func main() {
 		Content: userQuery,
 	})
 
-	EnableThinking := false
+	EnableThinking := true
 	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking)
-	err := eng.Run(context.Background(), s, reporter)
-	if err != nil {
+	if err := eng.Run(context.Background(), s, reporter); err != nil {
 		panic(err)
 	}
 }

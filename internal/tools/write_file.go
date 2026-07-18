@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"mhkyle/my-harness/internal/schema"
 )
@@ -57,11 +58,28 @@ func (t *WriteFileTool) Execute(ctx context.Context, args json.RawMessage) (stri
 
 	fullPath := filepath.Join(t.workDir, input.Path)
 
+	// Ensure the path stays within the working directory.
+	absWorkDir, err := filepath.Abs(t.workDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve workdir: %w", err)
+	}
+	absFullPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve full path: %w", err)
+	}
+	rel, err := filepath.Rel(absWorkDir, absFullPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve relative path: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("invalid path: escapes working directory")
+	}
+
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return "", fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	err := os.WriteFile(fullPath, []byte(input.Content), 0644)
+	err = os.WriteFile(fullPath, []byte(input.Content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"mhkyle/my-harness/internal/schema"
 )
@@ -56,9 +57,29 @@ func (m *ReadFileTool) Execute(ctx context.Context, args json.RawMessage) (strin
 		return "", fmt.Errorf("invalid arguments: %v", err)
 	}
 
-	fullPath := filepath.Join(m.workDir, input.Path)
+	// Prevent path traversal by ensuring the resolved path stays within workDir.
+	cleanPath := filepath.Clean(input.Path)
+	if filepath.IsAbs(cleanPath) {
+		return "", fmt.Errorf("absolute paths are not allowed")
+	}
 
-	file, err := os.Open(fullPath)
+	baseAbs, err := filepath.Abs(m.workDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve base dir: %v", err)
+	}
+	candidateAbs, err := filepath.Abs(filepath.Join(baseAbs, cleanPath))
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve path: %v", err)
+	}
+	rel, err := filepath.Rel(baseAbs, candidateAbs)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute relative path: %v", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes working directory")
+	}
+
+	file, err := os.Open(candidateAbs)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %v", err)
 	}

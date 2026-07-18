@@ -17,6 +17,7 @@ type AgentEngine struct {
 	registry       tools.Registry
 	EnableThinking bool
 	composer       *contextComposer.PromptComposer
+	compactor      contextComposer.Compactor
 }
 
 func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking bool) *AgentEngine {
@@ -24,7 +25,8 @@ func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, en
 		provider:       p,
 		registry:       r,
 		EnableThinking: enableThinking,
-		composer:       contextComposer.NewPromptComposer(workDir),
+		composer:       contextComposer.NewPromptComposer("."),
+		compactor:      contextComposer.NewStaticCompactor(3000, 10),
 	}
 }
 
@@ -32,6 +34,7 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 	log.Printf("[Engine] Start AgentEngine with DIR %s\n", session.WorkDir)
 
 	// adding skills dynamical promots
+	e.composer = contextComposer.NewPromptComposer(session.WorkDir)
 	systemPrompt := e.composer.Build()
 
 	turn := 0
@@ -42,33 +45,36 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 		workingMem := session.GetWorkingMemory(6)
 		contextHistory = append(contextHistory, systemPrompt)
 		contextHistory = append(contextHistory, workingMem...)
-		log.Printf("[Engine] Current context history length: %d\n", len(contextHistory))
+
+		// compact the context history if it exceeds the limit
+		compactedContext := e.compactor.Compact(contextHistory)
+		log.Printf("[Engine] Current context history length: %d\n", len(compactedContext))
 
 		// Two-Stage ReAct
 		if e.EnableThinking {
 			log.Println("[Engine] Thinking mode enabled. Start thinking...")
-			thinkResp, err := e.provider.Generate(ctx, contextHistory, nil)
+			thinkResp, err := e.provider.Generate(ctx, compactedContext, nil)
 			if err != nil {
 				return fmt.Errorf("failed to generate thinking response: %v", err)
 			}
 
 			if thinkResp.Content != "" {
 				log.Printf("💭 Model Thinking: %s\n", thinkResp.Content)
-				contextHistory = append(contextHistory, *thinkResp)
+				compactedContext = append(compactedContext, *thinkResp)
 			}
 		}
 
 		availableTools := e.registry.GetAvailableTools()
-		actionMsg, err := e.provider.Generate(ctx, contextHistory, availableTools)
+		actionMsg, err := e.provider.Generate(ctx, compactedContext, availableTools)
 		if err != nil {
 			return fmt.Errorf("failed to generate response: %v", err)
 		}
 
+		session.Append(*actionMsg)
 		log.Printf("[Engine] Model Response: %v\n", actionMsg)
-		contextHistory = append(contextHistory, *actionMsg)
+		compactedContext = append(compactedContext, *actionMsg)
 
 		if actionMsg.Content != "" && reporter != nil {
-			fmt.Printf("🤖 Model: %s\n", actionMsg.Content)
 			reporter.OnMessage(ctx, actionMsg.Content)
 		}
 
