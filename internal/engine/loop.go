@@ -15,7 +15,6 @@ import (
 type AgentEngine struct {
 	provider       provider.LLMProvider
 	registry       tools.Registry
-	WorkDir        string
 	EnableThinking bool
 	composer       *contextComposer.PromptComposer
 }
@@ -24,28 +23,25 @@ func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, en
 	return &AgentEngine{
 		provider:       p,
 		registry:       r,
-		WorkDir:        workDir,
 		EnableThinking: enableThinking,
 		composer:       contextComposer.NewPromptComposer(workDir),
 	}
 }
 
-func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
-	log.Printf("[Engine] Start AgentEngine with DIR %s\n", e.WorkDir)
+func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Reporter) error {
+	log.Printf("[Engine] Start AgentEngine with DIR %s\n", session.WorkDir)
 
-	contextHistory := []schema.Message{
-		e.composer.Build(),
-		{
-			Role:    schema.RoleUser,
-			Content: userPrompt,
-		},
-	}
+	// adding skills dynamical promots
+	systemPrompt := e.composer.Build()
 
-	turnCount := 0
-
+	turn := 0
 	for {
-		turnCount++
-		log.Printf("========== [Turn %d] Start ==========\n", turnCount)
+		turn++
+		log.Printf("[Engine] Turn %d\n", turn)
+		var contextHistory []schema.Message
+		workingMem := session.GetWorkingMemory(6)
+		contextHistory = append(contextHistory, systemPrompt)
+		contextHistory = append(contextHistory, workingMem...)
 		log.Printf("[Engine] Current context history length: %d\n", len(contextHistory))
 
 		// Two-Stage ReAct
@@ -63,49 +59,52 @@ func (e *AgentEngine) Run(ctx context.Context, userPrompt string) error {
 		}
 
 		availableTools := e.registry.GetAvailableTools()
-		responseMsg, err := e.provider.Generate(ctx, contextHistory, availableTools)
+		actionMsg, err := e.provider.Generate(ctx, contextHistory, availableTools)
 		if err != nil {
 			return fmt.Errorf("failed to generate response: %v", err)
 		}
 
-		log.Printf("[Engine] Model Response: %v\n", responseMsg)
-		contextHistory = append(contextHistory, *responseMsg)
+		log.Printf("[Engine] Model Response: %v\n", actionMsg)
+		contextHistory = append(contextHistory, *actionMsg)
 
-		if responseMsg.Content != "" {
-			fmt.Printf("🤖 Model: %s\n", responseMsg.Content)
+		if actionMsg.Content != "" && reporter != nil {
+			fmt.Printf("🤖 Model: %s\n", actionMsg.Content)
+			reporter.OnMessage(ctx, actionMsg.Content)
 		}
 
-		if len(responseMsg.ToolCalls) == 0 {
+		if len(actionMsg.ToolCalls) == 0 {
 			log.Println("[Engine] Task completed, exiting loop.")
 			break
 		}
 
-		log.Printf("[Engine] Model requested to call %d tools...\n", len(responseMsg.ToolCalls))
+		log.Printf("[Engine] Model requested to call %d tools...\n", len(actionMsg.ToolCalls))
 
 		var wg sync.WaitGroup
-		wg.Add(len(responseMsg.ToolCalls))
-		var tempContextHistory = make([]schema.Message, len(responseMsg.ToolCalls))
-		for i, toolCall := range responseMsg.ToolCalls {
+		wg.Add(len(actionMsg.ToolCalls))
+		var tempContextHistory = make([]schema.Message, len(actionMsg.ToolCalls))
+		for i, toolCall := range actionMsg.ToolCalls {
 			go func(tc schema.ToolCall, index int) {
 				defer wg.Done()
 				log.Printf("  -> 🛠️ Executing tool: %s, Arguments: %s\n", tc.Name, string(tc.Arguments))
 				result := e.registry.Execute(ctx, tc)
 
-				if result.IsError {
-					log.Printf("  -> ❌ Tool %s execution error: %s\n", tc.Name, result.Output)
-				} else {
-					log.Printf("  -> ✅ Tool %s executed successfully (returned %d bytes)\n", tc.Name, len(result.Output))
+				if reporter != nil {
+					displayOutput := result.Output
+					if len(displayOutput) > 200 {
+						displayOutput = displayOutput[:200] + "...(truncated)"
+					}
+					reporter.OnToolResult(ctx, tc.Name, displayOutput, result.IsError)
 				}
-				observationMsg := schema.Message{
+
+				tempContextHistory[index] = schema.Message{
 					Role:       schema.RoleUser,
 					Content:    result.Output,
 					ToolCallID: tc.ID,
 				}
-				tempContextHistory[index] = observationMsg
 			}(toolCall, i)
 		}
 		wg.Wait()
-		contextHistory = append(contextHistory, tempContextHistory...)
+		session.Append(tempContextHistory...)
 	}
 
 	return nil
