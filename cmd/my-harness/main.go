@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 
@@ -14,6 +16,7 @@ import (
 func main() {
 	workDir, _ := os.Getwd()
 
+	// models
 	apiKey, err := os.ReadFile("/Users/minghyuan/.ebay-claude-code.txt")
 	if err != nil {
 		log.Fatalf("failed to read API key: %v", err)
@@ -24,6 +27,14 @@ func main() {
 		log.Fatalf("failed to initialize Zhipu OpenAI provider")
 	}
 
+	// go run cmd/my-harness/main.go -prompt="搭建一个极简的 Go 语言 Web Server 项目在 server.go 中"
+	promptPtr := flag.String("prompt", "", "Prompt to send to the AI")
+	flag.Parse()
+	if *promptPtr == "" {
+		fmt.Println("Please provide a prompt using the -prompt flag.")
+		os.Exit(1)
+	}
+
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(workDir))
 	registry.Register(tools.NewWriteFileTool(workDir))
@@ -32,17 +43,16 @@ func main() {
 
 	reporter := engine.NewTerminalReporter()
 	// nil session
-	userQuery := `
-	How many lines of golang code here in the project without vendor? Please provide a detailed breakdown by file type and the total count.
-	`
 	s := engine.GlobalSessionMgr.GetOrCreate("chat1", workDir)
 	s.Append(schema.Message{
 		Role:    schema.RoleUser,
-		Content: userQuery,
+		Content: *promptPtr,
 	})
 
 	EnableThinking := true
-	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking)
+	enablePlanMode := true
+
+	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking, enablePlanMode)
 	if err := eng.Run(context.Background(), s, reporter); err != nil {
 		panic(err)
 	}

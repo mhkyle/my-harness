@@ -10,6 +10,9 @@
             "request": "launch",
             "mode": "debug",
             "program": "cmd/my-harness/main.go",
+            "args": [
+                "-prompt=在目录 cmd/server中帮我实现一个超简单的基于 Gin 的 Golang Web server 框架,同时在 internal/route 中增加一个简单的 route /healthcheck 返回200 OK来表示 server 正常运行"
+            ]
         }
     ]
 }

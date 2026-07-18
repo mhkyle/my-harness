@@ -16,17 +16,19 @@ type AgentEngine struct {
 	provider       provider.LLMProvider
 	registry       tools.Registry
 	EnableThinking bool
+	PlanMode       bool
 	composer       *contextComposer.PromptComposer
 	compactor      contextComposer.Compactor
 }
 
-func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking bool) *AgentEngine {
+func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking, planMode bool) *AgentEngine {
 	return &AgentEngine{
 		provider:       p,
 		registry:       r,
 		EnableThinking: enableThinking,
-		composer:       contextComposer.NewPromptComposer("."),
-		compactor:      contextComposer.NewStaticCompactor(3000, 10),
+		PlanMode:       planMode,
+		composer:       contextComposer.NewPromptComposer(workDir, planMode),
+		compactor:      contextComposer.NewStaticCompactor(20000, 10),
 	}
 }
 
@@ -34,7 +36,7 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 	log.Printf("[Engine] Start AgentEngine with DIR %s\n", session.WorkDir)
 
 	// adding skills dynamical promots
-	e.composer = contextComposer.NewPromptComposer(session.WorkDir)
+	e.composer = contextComposer.NewPromptComposer(session.WorkDir, e.PlanMode)
 	systemPrompt := e.composer.Build()
 
 	turn := 0
