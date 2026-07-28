@@ -25,6 +25,7 @@ type AgentEngine struct {
 	composer       *contextComposer.PromptComposer
 	compactor      contextComposer.Compactor
 	recovery       contextComposer.RecoveryManager
+	injector       Reminder
 }
 
 func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, enableThinking, planMode bool) *AgentEngine {
@@ -36,6 +37,7 @@ func NewAgentEngine(p provider.LLMProvider, r tools.Registry, workDir string, en
 		composer:       contextComposer.NewPromptComposer(workDir, planMode),
 		compactor:      contextComposer.NewStaticCompactor(maxContextSize, maxHistorySize),
 		recovery:       contextComposer.NewSimpleRecoveryManager(),
+		injector:       NewReminderInjector(),
 	}
 }
 
@@ -97,6 +99,9 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 		var wg sync.WaitGroup
 		wg.Add(len(actionMsg.ToolCalls))
 		var tempContextHistory = make([]schema.Message, len(actionMsg.ToolCalls))
+
+		var lastToolCall schema.ToolCall
+		var lastResult schema.ToolResult
 		for i, toolCall := range actionMsg.ToolCalls {
 			go func(tc schema.ToolCall, index int) {
 				defer wg.Done()
@@ -123,10 +128,21 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 					Content:    result.Output,
 					ToolCallID: tc.ID,
 				}
+
+				if index == len(actionMsg.ToolCalls)-1 {
+					lastToolCall = tc
+					lastResult = result
+				}
 			}(toolCall, i)
 		}
 		wg.Wait()
 		session.Append(tempContextHistory...)
+
+		// just in case the tool calling it in the dead loop.
+		reminderMsg := e.injector.CheckAndInject(lastToolCall, lastResult)
+		if reminderMsg != nil {
+			session.Append(*reminderMsg)
+		}
 	}
 
 	return nil

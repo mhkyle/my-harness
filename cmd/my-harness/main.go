@@ -49,7 +49,7 @@ func main() {
 		Content: *promptPtr,
 	})
 
-	EnableThinking := true
+	EnableThinking := false
 	enablePlanMode := true
 
 	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking, enablePlanMode)
