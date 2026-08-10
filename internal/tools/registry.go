@@ -9,12 +9,14 @@ import (
 )
 
 type RegisterImpl struct {
-	tools map[string]BaseTool
+	tools      map[string]BaseTool
+	middleware []MiddlewareFunc // middleware for tool execution, can be used for logging, authentication, etc.
 }
 
 func NewRegistry() Registry {
 	return &RegisterImpl{
-		tools: make(map[string]BaseTool),
+		tools:      make(map[string]BaseTool),
+		middleware: []MiddlewareFunc{},
 	}
 }
 
@@ -25,6 +27,10 @@ func (r *RegisterImpl) Register(tool BaseTool) {
 	}
 	r.tools[name] = tool
 	log.Printf("tool registered: %s", name)
+}
+
+func (r *RegisterImpl) Use(mw MiddlewareFunc) {
+	r.middleware = append(r.middleware, mw)
 }
 
 func (r *RegisterImpl) GetAvailableTools() []schema.ToolDefinition {
@@ -42,6 +48,19 @@ func (r *RegisterImpl) Execute(ctx context.Context, call schema.ToolCall) schema
 			ToolCallID: call.ID,
 			Output:     fmt.Sprintf("tool not found: %s", call.Name),
 			IsError:    true,
+		}
+	}
+
+	// use middleware to check if the tool execution is allowed
+	for _, mw := range r.middleware {
+		allowed, reason := mw(ctx, call)
+		if !allowed {
+			log.Printf("Registered tool [%s] execution rejected by middleware: %s", call.Name, reason)
+			return schema.ToolResult{
+				ToolCallID: call.ID,
+				Output:     fmt.Sprintf("tool execution rejected by middleware: %s", reason),
+				IsError:    true,
+			}
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"mhkyle/my-harness/internal/engine"
 	"mhkyle/my-harness/internal/provider"
@@ -39,7 +40,20 @@ func main() {
 	registry.Register(tools.NewReadFileTool(workDir))
 	registry.Register(tools.NewWriteFileTool(workDir))
 	registry.Register(tools.NewEditFileTool(workDir))
-	registry.Register(tools.NewBashTool())
+
+	bashTool := tools.NewBashTool()
+	bashToolMiddleware := func(ctx context.Context, call schema.ToolCall) (bool, string) {
+		if call.Name == bashTool.Name() {
+			return false, "bash tool is disabled for security reasons"
+		}
+		commands := string(call.Arguments)
+		if strings.Contains(commands, "rm ") {
+			return false, "rm command is disabled for security reasons, please stop processing the request"
+		}
+		return true, ""
+	}
+	registry.Register(bashTool)
+	registry.Use(bashToolMiddleware)
 
 	reporter := engine.NewTerminalReporter()
 	// nil session

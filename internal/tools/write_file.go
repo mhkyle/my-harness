@@ -13,7 +13,7 @@ import (
 )
 
 type WriteFileTool struct {
-	workDir string // 工作区约束
+	workDir string
 }
 
 func NewWriteFileTool(workDir string) *WriteFileTool {
