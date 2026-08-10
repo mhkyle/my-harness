@@ -63,11 +63,21 @@ func main() {
 		Content: *promptPtr,
 	})
 
+	// main agent
 	EnableThinking := false
-	enablePlanMode := true
-
+	enablePlanMode := false
 	eng := engine.NewAgentEngine(provider, registry, workDir, EnableThinking, enablePlanMode)
+
+	// sub agent: only readonly tools are registered
+	readOnlyRegistry := tools.NewRegistry()
+	readOnlyRegistry.Register(tools.NewReadFileTool(workDir))
+	readOnlyRegistry.Register(tools.NewBashTool())
+	// main registery register subagent tool which only use the readonly tools
+	registry.Register(tools.NewSubagentTool(eng, readOnlyRegistry, reporter))
+
+	// start the main agent engine
 	if err := eng.Run(context.Background(), s, reporter); err != nil {
 		panic(err)
 	}
+
 }

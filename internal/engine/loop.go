@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	maxHistorySize = 100
-	maxContextSize = 36000
+	maxHistorySize   = 100
+	maxContextSize   = 36000
+	maxSubAgentTurns = 10
 )
 
 type AgentEngine struct {
@@ -146,4 +147,79 @@ func (e *AgentEngine) Run(ctx context.Context, session *Session, reporter Report
 	}
 
 	return nil
+}
+
+func (e *AgentEngine) RunSub(ctx context.Context, taskPrompt string, readOnlyRegistry tools.Registry, reporter interface{}) (string, error) {
+	ctxHistory := []schema.Message{
+		{
+			Role: schema.RoleSystem,
+			Content: `You are a sub-agent explorer, your task is to execute the given task prompt that is provided by the main agent in local working space.
+			You have access to a set of tools that you can use to complete the task. You should only use the tools that are available in the provided registry.
+			Notes: \n
+			1. You MUST and only Rely on the tools provided to get the answer. Do not make up any information or guess the answer. \n
+			2. If you cannot find the answer, you can try different tools or return a message indicating that the answer could not be found. \n
+			3. When you find the answer, you should stop calling tools and return a summary of the task execution and the final answer to the main agent, so that main agent can proceed accordingly. \n`,
+		},
+		{
+			Role:    schema.RoleUser,
+			Content: taskPrompt,
+		},
+	}
+
+	turnCount := 0
+	for {
+		turnCount++
+		if turnCount > maxSubAgentTurns {
+			return "", fmt.Errorf("sub-agent execution exceeded maximum allowed turns (%d). Possible infinite loop detected.", maxSubAgentTurns)
+		}
+
+		availableTools := readOnlyRegistry.GetAvailableTools()
+		compactedContext := e.compactor.Compact(ctxHistory)
+		actionResp, err := e.provider.Generate(ctx, compactedContext, availableTools)
+		if err != nil {
+			return "", fmt.Errorf("subagent failed to generate response: %v", err)
+		}
+
+		ctxHistory = append(ctxHistory, *actionResp)
+
+		if len(actionResp.ToolCalls) == 0 {
+			return actionResp.Content, nil
+		}
+
+		observationMsgs := make([]schema.Message, len(actionResp.ToolCalls))
+		var wg sync.WaitGroup
+		for i, toolCall := range actionResp.ToolCalls {
+			wg.Add(1)
+			go func(idx int, tc schema.ToolCall) {
+				defer wg.Done()
+
+				var r Reporter
+				if reporter != nil {
+					r = reporter.(Reporter)
+					r.OnToolCall(ctx, fmt.Sprintf("[SubAgent] %s", tc.Name), string(tc.Arguments))
+				}
+
+				result := readOnlyRegistry.Execute(ctx, tc)
+				finalOutput := result.Output
+				if result.IsError {
+					finalOutput = e.recovery.AnalyzeAndInject(tc.Name, result.Output)
+				}
+				if reporter != nil {
+					display := finalOutput
+					if len(display) > maxContextSize {
+						display = display[:maxContextSize] + "...(truncated)"
+					}
+					r.OnToolResult(ctx, fmt.Sprintf("[SubAgent] %s", tc.Name), display, result.IsError)
+				}
+
+				observationMsgs[idx] = schema.Message{
+					Role:       schema.RoleUser,
+					Content:    finalOutput,
+					ToolCallID: tc.ID,
+				}
+			}(i, toolCall)
+		}
+		wg.Wait()
+		ctxHistory = append(ctxHistory, observationMsgs...)
+	}
 }
